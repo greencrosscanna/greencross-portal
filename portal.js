@@ -2,8 +2,8 @@
 /* Green Cross staff portal — one sign-in, a Launch tile for every app you hold, and a plain
    green/yellow/red Status strip. All GX Core traffic goes through GXClient.
 
-   The portal has no backend of its own. It signs in with login(user, pass, 'portal') — GX Core lets
-   anyone with at least one app grant in — then asks two token-gated routes:
+   The portal has no backend of its own. It signs in with Google ONLY (GX Core google_login, app
+   'portal') — GX Core lets anyone with at least one app grant in — then asks two token-gated routes:
      my_apps        the apps this person holds (Command Center is listed for Sky only, server-side)
      portal_status  lights for Dutchie / Sales data / Inventory sync (+ QuickBooks for Shawn and admins)
    Nothing here decides who sees what: the server filters, this file only draws. */
@@ -15,9 +15,9 @@
   var STATUS_EVERY_MS = 60000;
   // The registry has no URL for Command Center (it is served by GX Core itself).
   var CC_FALLBACK_URL = GXCORE_URL;
-  /* Sign in with Google (admins). The SAME string as GX_GOOGLE_CLIENT_ID in GX Core's gx_core.gs — Core
-     checks every Google token's audience against its own copy, so a mismatch here fails closed (Core
-     refuses with wrong_audience). Not a secret. Empty = the Google button is not shown at all. */
+  /* Sign in with Google — the portal's only sign-in. The SAME string as GX_GOOGLE_CLIENT_ID in GX Core's
+     gx_core.gs — Core checks every Google token's audience against its own copy, so a mismatch here
+     fails closed (Core refuses with wrong_audience). Not a secret. */
   var GOOGLE_CLIENT_ID = '929857310040-3nt8cnqags1n0bvpntokdnssiplvs4va.apps.googleusercontent.com';
   var GOOGLE_DOMAIN = 'greencrosscanna.com';
 
@@ -90,49 +90,21 @@
           '<img class="gx-login-mark" src="https://greencrosscanna.github.io/greencross-gx-theme/gx-logo.png" alt="Green Cross">' +
           '<div class="gx-login-sub">Apps</div>' +
         '</div>' +
-        (GOOGLE_CLIENT_ID
-          ? '<div class="pt-google"><div class="pt-google-h">Admins</div><div id="gBtn"></div>' +
-            '<div class="gx-login-err" id="gErr"></div><div class="pt-or"><span>or</span></div></div>'
-          : '') +
-        '<form class="gx-login-form" id="gateForm">' +
-          '<label class="gx-login-field"><span>Username</span>' +
-            '<input class="gx-input" id="gateUser" autocomplete="username" autocapitalize="none" required></label>' +
-          '<label class="gx-login-field"><span>Password</span>' +
-            '<input class="gx-input" id="gatePass" type="password" autocomplete="current-password" required></label>' +
-          '<button type="submit" class="gx-btn gx-btn-green gx-login-submit">Sign in</button>' +
-          '<div class="gx-login-err">' + esc(errMsg) + '</div>' +
-        '</form>' +
+        /* GOOGLE ONLY (Sky, 2026-11-16). Everyone signs into the portal with their Green Cross Google
+           account; there is no username/password form here. Passwords still work inside each app. */
+        '<div class="pt-google">' +
+          '<div class="pt-google-h">Sign in with your Green Cross Google account</div>' +
+          '<div id="gBtn"></div>' +
+          '<div class="gx-login-err" id="gErr">' + esc(errMsg) + '</div>' +
+        '</div>' +
       '</div></div>';
-    var form = document.getElementById('gateForm');
-    form.addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      var btn = form.querySelector('button'), err = form.querySelector('.gx-login-err');
-      var u = document.getElementById('gateUser').value.trim();
-      var pw = document.getElementById('gatePass').value;
-      btn.disabled = true; btn.textContent = 'Signing in…'; err.textContent = '';
-      GX.getJSON('login', { user: u, pass: pw, app: 'portal' }, { retries: 2, timeoutMs: 20000 })
-        .then(function (r) {
-          // Branch on `code`, never on `error` (Core rewords prose; the code is the contract).
-          if (r && r.code === 'no_access') throw new Error('Your account is not set up for any apps yet. Ask Sky to add you.');
-          if (!r || !r.ok) throw new Error((r && r.error) || 'Sign-in failed');
-          setSession({ user: r.user, name: r.displayName || r.user, role: r.role,
-                       token: r.token, expiresAt: r.expiresAt });
-          start();
-        })
-        .catch(function (e) {
-          err.textContent = (e && e.message) || 'Sign-in failed';
-          btn.disabled = false; btn.textContent = 'Sign in';
-          document.getElementById('gatePass').value = '';
-        });
-    });
-    if (GOOGLE_CLIENT_ID) mountGoogle();
-    document.getElementById('gateUser').focus();
+    mountGoogle();
   }
 
-  // ─── Sign in with Google (admins) ───────────────────────────────────────────────────────────
+  // ─── Sign in with Google ────────────────────────────────────────────────────────────────────
   // The page never decides anything about the Google token: it hands Google's credential to GX Core,
-  // which checks signature, audience, domain, freshness and admin role, and answers with the same
-  // session a password sign-in gets (plus `assurance`, which Command Center can later require).
+  // which checks signature, audience, domain, freshness and the person's app access, and answers with
+  // the same session a password sign-in gets (plus `assurance`, which Command Center can later require).
   var gisLoading = null;
   function loadGis() {
     if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
@@ -150,7 +122,7 @@
 
   function googleMsg(r) {
     var c = r && r.code;
-    if (c === 'not_admin') return 'Google sign-in is for admins. Use your username and password below.';
+    if (c === 'wrong_domain') return 'Use your Green Cross Google account (@greencrosscanna.com).';
     if (c === 'unknown_account') return 'That Google account is not linked to a Green Cross user. Ask Sky.';
     if (c === 'no_access') return 'Your account is not set up for any apps yet. Ask Sky to add you.';
     if (c === 'google_unavailable') return "Couldn't reach Google just now. Please try again.";
@@ -190,7 +162,7 @@
         text: 'signin_with', width: 280 });
     }).catch(function () {
       var el = document.getElementById('gErr');
-      if (el) el.textContent = 'Google sign-in could not load. Use your username and password.';
+      if (el) el.textContent = 'Google sign-in could not load. Check your connection and reload the page.';
     });
   }
 
