@@ -37,7 +37,7 @@
     // Dev guard reads. The portal writes nothing to GX Core except signing in and filing a bug
     // (file_bug is deliberately NOT listed: locally it stays blocked until writes are armed).
     // google_login is a sign-in like login: its only write is GX Core's own audit row.
-    window.GX_DEV_READS = ['login', 'google_login', 'my_apps', 'portal_status'];
+    window.GX_DEV_READS = ['login', 'google_login', 'my_apps', 'portal_status', 'handoff_code'];
   </script>
 
   <style>
@@ -108,6 +108,6 @@
   </script>
 
   <!-- ?v=N is the single source of truth deploy.sh reads for the version. Bump on each ship. -->
-  <script src="portal.js?v=1.106"></script>
+  <script src="portal.js?v=1.107"></script>
 </body>
 </html>

@@ -9,7 +9,7 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.106';
+  var VERSION = 'v1.107';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;
@@ -239,18 +239,65 @@
     } catch (e) { return false; }
     var cc = ((r && r.apps) || []).filter(function (a) { return a.slug === 'core-admin'; })[0];
     if (!cc) return false;
-    location.replace(cc.url || CC_FALLBACK_URL);
+    var url = cc.url || CC_FALLBACK_URL;
+    handoffUrl('core-admin', url).then(function (u) { location.replace(u); });
     return true;
+  }
+
+  /* OPEN AN APP ALREADY SIGNED IN. The apps live on other origins, so this page's session cannot reach
+     them; GX Core mints a 60-second, single-use code for (this person, that app) and the app trades it
+     for its own normal session — the person's real grant there, never more (handoff_code /
+     handoff_exchange in gx_core.gs). The code rides in the URL FRAGMENT, which is never sent to a
+     server, and the app wipes it from the address bar on load. The session token itself never goes in
+     a URL. Any failure here opens the plain URL: the app's own sign-in form is still there.
+     The Google assurance stamp is passed along so a Google sign-in stays a Google sign-in in the app;
+     GX Core re-checks it rather than believing it. */
+  function handoffUrl(slug, url) {
+    var s = getSession();
+    if (!s || !slug || !url) return Promise.resolve(url);
+    return GX.postJSON('handoff_code', { token: s.token, app: slug, assurance: s.assurance || '' },
+      { retries: 1, timeoutMs: 20000 })   // a retried mint only leaves an unused code to expire
+      .then(function (r) {
+        if (!r || !r.ok || !/^h1\.[A-Za-z0-9_-]+$/.test(String(r.code || ''))) return url;
+        return url.split('#')[0] + '#gxcode=' + r.code;
+      })
+      .catch(function () { return url; });
+  }
+
+  /* A tile click. The new tab is opened INSIDE the click (a tab opened after an await is a popup, and
+     browsers block those), shows a holding line while the code is fetched, then is sent on. Modified
+     clicks (new window, background tab, middle button) keep the plain link: no code is minted for a tab
+     nobody may look at within the minute. */
+  function onTileClick(ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('a.pt-tile[data-slug]') : null;
+    if (!el) return;
+    if (ev.button || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+    ev.preventDefault();
+    var url = el.getAttribute('href'), slug = el.getAttribute('data-slug'), name = el.getAttribute('data-name') || 'the app';
+    var w = null;
+    try { w = window.open('', '_blank'); } catch (e) { w = null; }
+    if (w) {
+      try {
+        w.document.title = 'Opening ' + name + '…';
+        w.document.body.style.cssText = 'font:16px system-ui,sans-serif;background:#0b1410;color:#e6f2ea;display:flex;align-items:center;justify-content:center;height:100vh;margin:0';
+        w.document.body.textContent = 'Opening ' + name + '…';
+      } catch (e) {}
+    }
+    handoffUrl(slug, url).then(function (u) {
+      if (w && !w.closed) { try { w.opener = null; } catch (e) {} w.location.replace(u); }
+      else location.href = u;   // popup blocked: open it here instead of not at all
+    });
   }
 
   function renderApps(r) {
     var host = document.getElementById('ptApps'); if (!host) return;
     var apps = (r && r.apps) || [];
     if (!apps.length) { host.innerHTML = '<div class="pt-note">No apps are set up for you yet. Ask Sky to add you.</div>'; return; }
+    if (!host.__gxHandoff) { host.addEventListener('click', onTileClick); host.__gxHandoff = true; }
     host.innerHTML = '<div class="pt-grid">' + apps.map(function (a) {
       var url = a.url || (a.slug === 'core-admin' ? CC_FALLBACK_URL : '');
       var tag = url ? 'a' : 'div';
-      var href = url ? ' href="' + esc(url) + '" target="_blank" rel="noopener"' : '';
+      var href = url ? ' href="' + esc(url) + '" target="_blank" rel="noopener" data-slug="' + esc(a.slug) + '" data-name="' + esc(a.name) + '"' : '';
       return '<' + tag + ' class="gx-card pt-tile"' + href + '>' +
         '<span class="pt-ic" style="background:' + esc(a.color || '#4ade80') + '">' + esc(String(a.name || '?').charAt(0)) + '</span>' +
         '<span><b>' + esc(a.name) + '</b><small>' + esc(a.tagline || '') + '</small></span></' + tag + '>';
