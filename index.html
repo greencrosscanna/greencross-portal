@@ -64,7 +64,12 @@
     .pt-note { color: var(--gx-text-mute); font-size: 13px; padding: 14px 0; }
     .pt-google { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 4px; }
     .pt-google-h { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--gx-text-mute); font-weight: 700; }
-    #gBtn { min-height: 44px; }
+    /* Google's button is an iframe. gx-theme sets color-scheme: dark, and a cross-origin iframe whose
+       scheme differs from its page's gets an OPAQUE canvas (white) instead of a transparent one — the
+       white box around the button. Matching Google's own (light) scheme on just this container makes
+       the frame transparent again. Scoped here; nothing shared is restyled. */
+    #gBtn { min-height: 44px; color-scheme: light; }
+    #gBtn iframe { color-scheme: light; }
     .pt-or { display: flex; align-items: center; gap: 10px; width: 100%; color: var(--gx-text-mute); font-size: 12px; }
     .pt-or::before, .pt-or::after { content: ''; flex: 1; border-top: 1px solid var(--gx-border, rgba(255,255,255,.12)); }
   </style>
@@ -103,6 +108,6 @@
   </script>
 
   <!-- ?v=N is the single source of truth deploy.sh reads for the version. Bump on each ship. -->
-  <script src="portal.js?v=1.105"></script>
+  <script src="portal.js?v=1.106"></script>
 </body>
 </html>
