@@ -36,7 +36,8 @@
   <script>
     // Dev guard reads. The portal writes nothing to GX Core except signing in and filing a bug
     // (file_bug is deliberately NOT listed: locally it stays blocked until writes are armed).
-    window.GX_DEV_READS = ['login', 'my_apps', 'portal_status'];
+    // google_login is a sign-in like login: its only write is GX Core's own audit row.
+    window.GX_DEV_READS = ['login', 'google_login', 'my_apps', 'portal_status'];
   </script>
 
   <style>
@@ -61,6 +62,11 @@
     .pt-tile b { font-size: 15px; }
     .pt-tile small { color: var(--gx-text-mute); font-size: 11.5px; line-height: 1.3; }
     .pt-note { color: var(--gx-text-mute); font-size: 13px; padding: 14px 0; }
+    .pt-google { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .pt-google-h { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--gx-text-mute); font-weight: 700; }
+    #gBtn { min-height: 44px; }
+    .pt-or { display: flex; align-items: center; gap: 10px; width: 100%; color: var(--gx-text-mute); font-size: 12px; }
+    .pt-or::before, .pt-or::after { content: ''; flex: 1; border-top: 1px solid var(--gx-border, rgba(255,255,255,.12)); }
   </style>
 </head>
 <body class="gx-app">
@@ -97,6 +103,6 @@
   </script>
 
   <!-- ?v=N is the single source of truth deploy.sh reads for the version. Bump on each ship. -->
-  <script src="portal.js?v=1.104"></script>
+  <script src="portal.js?v=1.105"></script>
 </body>
 </html>

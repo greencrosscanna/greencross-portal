@@ -9,12 +9,17 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.104';
+  var VERSION = 'v1.105';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;
   // The registry has no URL for Command Center (it is served by GX Core itself).
   var CC_FALLBACK_URL = GXCORE_URL;
+  /* Sign in with Google (admins). The SAME string as GX_GOOGLE_CLIENT_ID in GX Core's gx_core.gs — Core
+     checks every Google token's audience against its own copy, so a mismatch here fails closed (Core
+     refuses with wrong_audience). Not a secret. Empty = the Google button is not shown at all. */
+  var GOOGLE_CLIENT_ID = '';
+  var GOOGLE_DOMAIN = 'greencrosscanna.com';
 
   var GX = GXClient(GXCORE_URL, { retries: 3 });
   var root = document.getElementById('app');
@@ -69,6 +74,8 @@
 
   function signOut() {
     clearSession();
+    // Stop Google from silently picking the same account on the next visit to this sign-in screen.
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
     if (timer) { clearInterval(timer); timer = null; }
     renderGate('');
   }
@@ -83,6 +90,10 @@
           '<img class="gx-login-mark" src="https://greencrosscanna.github.io/greencross-gx-theme/gx-logo.png" alt="Green Cross">' +
           '<div class="gx-login-sub">Apps</div>' +
         '</div>' +
+        (GOOGLE_CLIENT_ID
+          ? '<div class="pt-google"><div class="pt-google-h">Admins</div><div id="gBtn"></div>' +
+            '<div class="gx-login-err" id="gErr"></div><div class="pt-or"><span>or</span></div></div>'
+          : '') +
         '<form class="gx-login-form" id="gateForm">' +
           '<label class="gx-login-field"><span>Username</span>' +
             '<input class="gx-input" id="gateUser" autocomplete="username" autocapitalize="none" required></label>' +
@@ -114,7 +125,73 @@
           document.getElementById('gatePass').value = '';
         });
     });
+    if (GOOGLE_CLIENT_ID) mountGoogle();
     document.getElementById('gateUser').focus();
+  }
+
+  // ─── Sign in with Google (admins) ───────────────────────────────────────────────────────────
+  // The page never decides anything about the Google token: it hands Google's credential to GX Core,
+  // which checks signature, audience, domain, freshness and admin role, and answers with the same
+  // session a password sign-in gets (plus `assurance`, which Command Center can later require).
+  var gisLoading = null;
+  function loadGis() {
+    if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
+    if (gisLoading) return gisLoading;
+    gisLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.onload = function () { resolve(); };
+      s.onerror = function () { gisLoading = null; reject(new Error('Google sign-in could not load')); };
+      document.head.appendChild(s);
+    });
+    return gisLoading;
+  }
+
+  function googleMsg(r) {
+    var c = r && r.code;
+    if (c === 'not_admin') return 'Google sign-in is for admins. Use your username and password below.';
+    if (c === 'unknown_account') return 'That Google account is not linked to a Green Cross user. Ask Sky.';
+    if (c === 'no_access') return 'Your account is not set up for any apps yet. Ask Sky to add you.';
+    if (c === 'google_unavailable') return "Couldn't reach Google just now. Please try again.";
+    return (r && r.error) || 'Google sign-in failed. Please try again.';
+  }
+
+  function onGoogleCredential(resp) {
+    var errEl = document.getElementById('gErr');
+    if (errEl) errEl.textContent = 'Signing in…';
+    // retries:1 is replay-safe: a second attempt with the same credential only mints another session
+    // for the same person (Core writes nothing else), and a refusal is JSON so it never retries.
+    GX.postJSON('google_login', { credential: resp && resp.credential, app: 'portal' }, { retries: 1, timeoutMs: 30000 })
+      .then(function (r) {
+        if (!r || !r.ok) throw new Error(googleMsg(r));
+        setSession({ user: r.user, name: r.displayName || r.user, role: r.role,
+                     token: r.token, expiresAt: r.expiresAt, amr: r.amr, assurance: r.assurance });
+        start();
+      })
+      .catch(function (e) {
+        var el = document.getElementById('gErr');
+        if (el) el.textContent = (e && e.message) || 'Google sign-in failed. Please try again.';
+      });
+  }
+
+  function mountGoogle() {
+    loadGis().then(function () {
+      var host = document.getElementById('gBtn');
+      if (!host) return;   // the gate was replaced while the script loaded
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: onGoogleCredential,
+        hd: GOOGLE_DOMAIN,          // a hint for Google's account picker only; GX Core enforces the domain
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+      google.accounts.id.renderButton(host, { theme: 'filled_black', size: 'large', shape: 'pill',
+        text: 'signin_with', width: 280 });
+    }).catch(function () {
+      var el = document.getElementById('gErr');
+      if (el) el.textContent = 'Google sign-in could not load. Use your username and password.';
+    });
   }
 
   // ─── the page ───────────────────────────────────────────────────────────────────────────────
