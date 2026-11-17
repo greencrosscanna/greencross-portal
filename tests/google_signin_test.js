@@ -31,8 +31,13 @@ if (fs.existsSync(hubSrc)) {
   console.log('  SKIP  hub not checked out beside this repo — client ID match not checked');
 }
 
-ok(/\(GOOGLE_CLIENT_ID\s*\n?\s*\?\s*'<div class="pt-google">/.test(js), 'the Google block renders only when a client ID is set');
-ok(/if \(GOOGLE_CLIENT_ID\) mountGoogle\(\);/.test(js), 'and Google is only mounted then');
+// GOOGLE ONLY (Sky, 2026-11-16): the portal has no password form at all.
+ok(!!portalId, 'a client ID is set — with no password form, an empty one would lock everyone out');
+const gate = (/function renderGate[\s\S]*?\n  \}\n/.exec(js) || [''])[0];
+ok(gate.length > 0, 'renderGate found');
+ok(/mountGoogle\(\);/.test(gate) && /id="gBtn"/.test(gate), 'the sign-in screen mounts the Google button');
+ok(!/type="password"|gatePass|gateUser/.test(gate), 'and has no username/password form');
+ok(!/getJSON\('login'/.test(js), 'the portal never calls password login');
 ok(js.indexOf("s.src = 'https://accounts.google.com/gsi/client';") >= 0, "Google's script comes from accounts.google.com, nowhere else");
 ok((js.match(/https:\/\/accounts\.google\.com/g) || []).length === 1, 'and no other Google URL is referenced');
 ok(/GX\.postJSON\('google_login', \{ credential: resp && resp\.credential, app: 'portal' \}/.test(js), 'the credential goes to GX Core google_login as a POST body, never in a URL');
