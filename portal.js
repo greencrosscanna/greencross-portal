@@ -9,7 +9,7 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.102';
+  var VERSION = 'v1.104';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;
@@ -150,6 +150,22 @@
     return r && r.ok === false && (r.code === 'invalid_session' || r.code === 'session_expired' || r.code === 'no_access');
   }
 
+  /* Whoever GX Core says holds Command Center (core-admin — Sky only, enforced server-side) lands there
+     after sign-in instead of on this page. Based on the app list, never a user name. Command Center's
+     "Portal" tile opens /?view=portal, which means "show me the staff view": that sets a per-tab flag
+     (sessionStorage) so clicking around here does not bounce them back. Returns true when it navigated. */
+  var STAFF_VIEW_KEY = 'portal_staff_view';
+  function goToCommandCenter(r) {
+    try {
+      if (/(?:^|[?&])view=portal(?:&|$)/.test(location.search)) sessionStorage.setItem(STAFF_VIEW_KEY, '1');
+      if (sessionStorage.getItem(STAFF_VIEW_KEY) === '1') return false;
+    } catch (e) { return false; }
+    var cc = ((r && r.apps) || []).filter(function (a) { return a.slug === 'core-admin'; })[0];
+    if (!cc) return false;
+    location.replace(cc.url || CC_FALLBACK_URL);
+    return true;
+  }
+
   function renderApps(r) {
     var host = document.getElementById('ptApps'); if (!host) return;
     var apps = (r && r.apps) || [];
@@ -191,6 +207,7 @@
     renderShell(sess);
     GX.jsonp('my_apps', { token: sess.token }).then(function (r) {
       if (refused(r)) { signOut(); return; }
+      if (goToCommandCenter(r)) return;
       renderApps(r);
     }).catch(function () {
       var host = document.getElementById('ptApps');
