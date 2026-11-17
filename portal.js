@@ -18,7 +18,7 @@
   /* Sign in with Google (admins). The SAME string as GX_GOOGLE_CLIENT_ID in GX Core's gx_core.gs — Core
      checks every Google token's audience against its own copy, so a mismatch here fails closed (Core
      refuses with wrong_audience). Not a secret. Empty = the Google button is not shown at all. */
-  var GOOGLE_CLIENT_ID = '';
+  var GOOGLE_CLIENT_ID = '929857310040-3nt8cnqags1n0bvpntokdnssiplvs4va.apps.googleusercontent.com';
   var GOOGLE_DOMAIN = 'greencrosscanna.com';
 
   var GX = GXClient(GXCORE_URL, { retries: 3 });
