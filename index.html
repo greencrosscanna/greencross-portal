@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Head and shell follow greencross-gx-theme/gx-app-template.html (icons, dev guard, no GX_EMBED).
+       Read the comments there before changing any of it. -->
+  <link rel="icon" type="image/png" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon-167.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="https://greencrosscanna.github.io/greencross-gx-theme/gc-touch-icon-152.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Green Cross">
+  <meta name="theme-color" content="#0a0e0d">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Green Cross Apps</title>
+
+  <link rel="stylesheet" href="https://greencrosscanna.github.io/greencross-gx-theme/gx-theme.css">
+
+  <script>
+  (function () {
+    var h = location.hostname;
+    if (!(h === 'localhost' || h === '127.0.0.1' || h === '::1' ||
+          /^192\.168\./.test(h) || /^10\./.test(h))) return;   // production: do nothing at all
+    var s = document.createElement('script');
+    s.src = 'https://greencrosscanna.github.io/greencross-gx-theme/gx-dev.js';
+    s.async = false;
+    document.head.appendChild(s);
+  })();
+  </script>
+
+  <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
+  <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
+
+  <script>
+    // Dev guard reads. The portal writes nothing to GX Core except signing in.
+    window.GX_DEV_READS = ['login', 'my_apps', 'portal_status'];
+  </script>
+
+  <style>
+    /* Layout only — colors come from gx-theme tokens. Shared components are never restyled here. */
+    body { margin: 0; min-height: 100vh; font-size: 15px; }
+    .pt-wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+    .pt-h { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--gx-text-mute); font-weight: 700; margin: 22px 0 10px; }
+    .pt-status { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pt-light { display: flex; align-items: center; gap: 8px; padding: 9px 12px; min-width: 0; flex: 1 1 150px; }
+    .pt-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--gx-text-mute); }
+    .pt-dot.green { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+    .pt-dot.yellow { background: #d4a847; box-shadow: 0 0 6px #d4a847; }
+    .pt-dot.red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+    .pt-light b { display: block; font-size: 13px; }
+    .pt-light small { display: block; font-size: 11px; color: var(--gx-text-mute); }
+    .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .pt-tile { display: flex; flex-direction: column; gap: 10px; padding: 16px 14px; min-height: 96px; color: inherit; text-decoration: none; }
+    .pt-tile:active { transform: scale(.98); }
+    .pt-ic { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+             font-weight: 800; color: var(--gx-green-ink); }
+    .pt-tile b, .pt-tile small { display: block; }
+    .pt-tile b { font-size: 15px; }
+    .pt-tile small { color: var(--gx-text-mute); font-size: 11.5px; line-height: 1.3; }
+    .pt-note { color: var(--gx-text-mute); font-size: 13px; padding: 14px 0; }
+  </style>
+</head>
+<body class="gx-app">
+  <header class="gx-topnav" id="topnav">
+    <div class="gx-topnav-brand">
+      <img class="gx-topnav-logo" src="https://greencrosscanna.github.io/greencross-gx-theme/gx-logo.png" alt="Green Cross">
+      <span class="gx-topnav-sub">Apps</span>
+    </div>
+    <nav class="gx-topnav-tabs" id="navTabs"></nav>
+    <div class="gx-topnav-right">
+      <div class="gx-clock"><div class="gx-clock-time">—</div><div class="gx-clock-date">—</div></div>
+      <div id="userSlot"></div>
+    </div>
+  </header>
+
+  <main id="app" class="gx-main"><!-- rendered by portal.js --></main>
+
+  <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-updatecheck.js"></script>
+  <script>
+    GXUpdateCheck.init({
+      app:     'portal',
+      gxcore:  'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec',
+      version: function () { return window.PORTAL_VERSION || ''; },
+      isAuthed: function () { return true; },
+    });
+  </script>
+  <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-maintenance.js"></script>
+  <script>
+    GXMaintenance.init({
+      app:     'portal',
+      appName: 'Green Cross Apps',
+      gxcore:  'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec',
+    });
+  </script>
+
+  <!-- ?v=N is the single source of truth deploy.sh reads for the version. Bump on each ship. -->
+  <script src="portal.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,226 @@
+#!/bin/sh
+# ─── SHARED SessionStart hook (source of truth) ──────────────────────────────────────────────────
+# Surface what needs THIS app: pending brain-notes from GX Core's central inbox (brain_notes) for
+# cross-app handoffs, and this app's OPEN BUGS read straight from the bug board (bug_reports).
+# Fails silent (no secret / offline).
+#
+# BUGS ARE FETCHED, NOT FORWARDED (decided 2026-09-06). Filing a bug used to also emit a 🐞 note to the
+# owning chat, because this hook read notes and nothing else — so a bug that did not become a note
+# reached nobody. That made one problem carry two records with two lifecycles: the display_name bug on
+# 2026-09-06 had to be parked as a note AND left open as a bug, and closing one said nothing about the
+# other. The doorbell was doing the filing cabinet's job. Now the board is the single record and this
+# hook rings its own doorbell by asking for it.
+#
+# ORDER MATTERS IF THIS IS EVER UNDONE: this half — reading bugs directly — has to be live in every
+# spoke BEFORE Core stops emitting the notes, or bugs go silent in the gap.
+#
+# Every spoke uses THIS script; the ONLY per-repo edit is the APP= line. Copy it to
+# <repo>/.claude/gx-brain-notes.sh and set APP to the app's GX key. To change the hook, edit it HERE and
+# re-copy to the spokes (keep them identical apart from APP=).
+#
+# WHY THE RETRY: GX Core's /exec is a two-hop redirect that ~6% of the time serves a Drive HTML error page
+# instead of JSON. A single fetch would silently drop the whole inbox on that miss (this is how the rec-price
+# note was lost). gx_fetch RETRIES until it gets real JSON — normally one fast call; retries only fire on the flake.
+# ─── Claim the checkout, first thing ────────────────────────────────────────────────────────────
+# These repos live in Dropbox, so two Claude sessions open the SAME folder and the SAME HEAD. On
+# 2026-09-02 one session switched the branch out from under another and shipped its unreviewed commit
+# as GX Core v284; it recurred three times in spiff on 2026-09-08/09. gxclaim.sh makes the first
+# session own the tree and refuses the second at commit, push and branch-change.
+#
+# It runs BEFORE the secret check below, which exits early in any repo without .gx_deploy_secret — the
+# collision has nothing to do with the brain inbox and must not depend on it. `install` is re-run every
+# session on purpose: this filesystem drops executable bits asynchronously, and a git hook that lost
+# one is skipped silently. Re-arming costs three writes; noticing it had disarmed costs a bad ship.
+if [ -f ./gxclaim.sh ]; then
+  sh ./gxclaim.sh install >/dev/null 2>&1
+  sh ./gxclaim.sh claim "" || echo "   → this chat is READ-ONLY in this repo until that one finishes. Once it closes, this chat's first commit takes the claim."
+fi
+
+# ─── Is main red on GitHub? ─────────────────────────────────────────────────────────────────────
+# The pre-push gate runs on the Mac; CI runs on Linux, and the two disagree about things like a file
+# that exists only in the folder above the repos, or the exact wording grep prints. On 2026-09-09/10
+# the hub stayed red from 21:57 to 11:00 and Leaderboard from 23:38 to 11:06 — 26 failure emails
+# between them — and no chat noticed, because nothing a chat reads ever asked GitHub. Sky's inbox was
+# the only monitor. Now the first thing a session sees in a red repo is that it is red, and why.
+#
+# Silent when green, when gh is missing or signed out, or when offline: this is a doorbell, not a gate.
+# Reads the latest COMPLETED run, so a push still running does not hide a red main — or clear it.
+#
+# A FUNCTION, because it runs alongside the two GX Core reads below instead of ahead of them
+# (2026-10-09). The three waits are independent network calls; in sequence the hook measured 8.7s
+# typical across 15 session starts. Its output is still printed FIRST — see where it is collected.
+gx_ci_red() {
+if command -v gh >/dev/null 2>&1; then
+  _REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
+  if [ -n "$_REPO" ]; then
+    _RUNS=$(gh run list -R "$_REPO" --branch main --workflow tests --limit 20 \
+      --json databaseId,status,conclusion,createdAt,displayTitle,url 2>/dev/null)
+    _RED=$(printf '%s' "$_RUNS" | python3 -c '
+import sys, json
+try: runs = [r for r in json.load(sys.stdin) if r.get("status") == "completed"]
+except Exception: sys.exit(0)
+if not runs or runs[0].get("conclusion") != "failure": sys.exit(0)
+n = 0
+for r in runs:
+    if r.get("conclusion") != "failure": break
+    n += 1
+# Pacific, because that is the clock Sky reads his inbox on; the API answers in UTC.
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    t = datetime.fromisoformat(runs[n - 1]["createdAt"].replace("Z", "+00:00")).astimezone(ZoneInfo("America/Los_Angeles"))
+    since = t.strftime("%b %d %I:%M %p PT").replace(" 0", " ")
+except Exception:
+    since = runs[n - 1]["createdAt"].replace("T", " ")[:16] + " UTC"
+print("%s\t%d\t%s\t%s\t%s" % (runs[0]["databaseId"], n, since, runs[0].get("displayTitle", "")[:70], runs[0]["url"]))
+' 2>/dev/null)
+    if [ -n "$_RED" ]; then
+      _ID=$(printf '%s' "$_RED" | cut -f1)
+      echo "⛔ CI is RED on main in $_REPO — $(printf '%s' "$_RED" | cut -f2) failed run(s) in a row, since $(printf '%s' "$_RED" | cut -f3)."
+      echo "   Each one emailed Sky. Latest: $(printf '%s' "$_RED" | cut -f4)"
+      gh run view "$_ID" -R "$_REPO" --log-failed 2>/dev/null | grep -E '✗ |Error: ' | grep -v 'PUSH BLOCKED' | sed -E 's/^.*Z //' | awk '!seen[$0]++' | head -4 | sed 's/^/     /'
+      echo "   $(printf '%s' "$_RED" | cut -f5)"
+      echo "   → fix this before new work: it usually passes on the Mac and fails only on Linux, so the push gate will not show it."
+    fi
+  fi
+fi
+}
+
+APP="portal"
+GXCORE="https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec"
+
+# Each background job writes to its own file, so nothing interleaves and the print order below is
+# the same as when these ran one after another. The trap clears the files however the hook exits.
+_T=$(mktemp -d 2>/dev/null) || { _T="${TMPDIR:-/tmp}/gxbn.$$"; mkdir -p "$_T"; }
+trap 'rm -rf "$_T"' EXIT
+gx_ci_red >"$_T/ci" 2>/dev/null &
+
+# No secret means no inbox to ask — but the CI answer is still owed, so wait for it before leaving.
+if [ ! -f ".gx_deploy_secret" ]; then wait; cat "$_T/ci" 2>/dev/null; exit 0; fi
+SECRET=$(cat .gx_deploy_secret)
+
+# Retry-aware GET → prints a JSON object, or nothing after 4 tries. $1=action  $2=status
+#
+# WHY 20s AND NOT 6. Six seconds was inside the normal range for a slow library read, not a generous
+# timeout — GX Core measured 6-30s on getBrands this month. On 2026-09-16 a spiff session opened with a
+# pending ask in its inbox and this hook printed NOTHING: Core answered neither call inside six seconds,
+# four times. The same two calls by hand at --max-time 10 and 20 returned immediately. Reported by spiff;
+# the silent half is fixed below, in the renderer.
+gx_fetch() {
+  _i=1
+  while [ "$_i" -le 4 ]; do
+    _r=$(curl -sL --max-time 20 -G "$GXCORE" \
+      --data-urlencode "action=$1" --data-urlencode "secret=$SECRET" \
+      --data-urlencode "app=$APP" --data-urlencode "status=$2" 2>/dev/null)
+    case "$_r" in \{*) printf '%s' "$_r"; return 0 ;; esac   # accept only a JSON object; the flake is HTML
+    _i=$((_i + 1)); [ "$_i" -le 4 ] && sleep 2
+  done
+}
+
+# status=open means pending OR blocked — everything not yet CLOSED, in one call.
+#
+# REQUIRES GX Core to have shipped `open` (getNotes, 2026-08-25). Against an older Core, `open` matches
+# no note and returns [] with no error, and this hook would print "nothing needs you" over a full inbox.
+# That is why this file ships only AFTER the Core deploy, never alongside it.
+# Both boards in one banner. A failed fetch becomes null rather than empty, so the renderer can tell
+# "asked, nothing there" from "could not ask" instead of printing an all-clear over an unread inbox.
+#
+# Asked TOGETHER, and together with the CI check started above. A fetch that fails writes an empty
+# file, which reads back as an empty string and becomes null below — the same contract as before.
+gx_fetch notes open >"$_T/notes" 2>/dev/null &
+gx_fetch bugs '' >"$_T/bugs" 2>/dev/null &
+wait
+cat "$_T/ci" 2>/dev/null
+_NOTES=$(cat "$_T/notes" 2>/dev/null)
+_BUGS=$(cat "$_T/bugs" 2>/dev/null)
+printf '{"app":"%s","notes_doc":%s,"bugs_doc":%s}' "$APP" "${_NOTES:-null}" "${_BUGS:-null}" | python3 -c '
+import sys, json
+try: d = json.load(sys.stdin)
+except Exception: sys.exit(0)
+nd_raw = d.get("notes_doc")
+bd_raw = d.get("bugs_doc")
+nd = nd_raw or {}
+bd = bd_raw or {}
+notes = nd.get("notes") or []
+bugs = bd.get("bugs") or []
+app = d.get("app") or nd.get("app") or bd.get("app") or "this app"
+# SAY SO WHEN IT COULD NOT ASK. The fetcher is careful to pass null rather than empty on a failed
+# call, precisely so these two cases stay distinguishable — and then, until 2026-09-17, the very next
+# line collapsed both into a silent exit. A session opened, saw nothing, and correctly concluded
+# nothing needed it. That is the failure this suite keeps paying for: a doorbell whose silence means
+# both "all clear" and "I could not reach the door". The distinction was already computed; it just
+# needed printing. Reported by spiff (note_mu5v8xfb_fizf) after a real ask went unseen.
+unreachable = [w for w, v in (("brain notes", nd_raw), ("the bug board", bd_raw)) if v is None]
+if unreachable:
+    print("⚠️  Could not reach GX Core — %s NOT checked for %s." % (" and ".join(unreachable), app))
+    print("      Silence below is not an all-clear. Re-run: sh .claude/gx-brain-notes.sh")
+if not notes and not bugs: sys.exit(0)
+# ASKS FIRST, IN FULL. FYIs collapse to a list of subjects.
+# The board grew faster than it drained because most notes were acknowledgments — they still had to be
+# read and resolved while asking for nothing. A banner that prints a 2,500-character "done" note at the
+# same weight as a real request teaches you to skim past both.
+DONE_WORDS = ("closed", "resolved", "done", "shipped", "deployed", "retraction",
+              "correction", "acknowledged", "answered", "stand down", "no action")
+def is_fyi(n):
+    # DISPLAY-ONLY heuristic, deliberately more generous than the one that decides EXPIRY.
+    # Only kind=fyi ever auto-closes; this just decides what collapses in the banner. So a note
+    # titled "RESOLVED: … but one question" gets tucked into the skim list and still waits for a
+    # human — being wrong here costs a glance, whereas being wrong about expiry loses a request.
+    # Needed because the ✅ convention is owned by core-admin, while the spokes write CLOSED / RESOLVED / DONE.
+    k = str(n.get("kind", "")).strip().lower()
+    if k == "fyi": return True
+    if k == "ask": return False
+    t = str(n.get("title", "")).strip()
+    if t.startswith("\u2705"): return True
+    low = t.lower()
+    return any(low.startswith(w) for w in DONE_WORDS)
+# BLOCKED is not fresh work and must not be rendered as if it were. It means a human — usually Sky —
+# owes a decision or an action no agent can take. Printed at the same weight as an unread ask, it reads
+# identically to "nobody has looked at this", which is exactly the confusion the status was added to end.
+blocked = [n for n in notes if str(n.get("status", "")).strip().lower() == "blocked"]
+rest = [n for n in notes if n not in blocked]
+asks = [n for n in rest if not is_fyi(n)]
+fyis = [n for n in rest if is_fyi(n)]
+if asks:
+    print("\U0001F4CB Brain notes — %d NEEDING YOU for %s%s:" % (
+        len(asks), app, (" (+%d done, below)" % len(fyis)) if fyis else ""))
+    for n in asks:
+        # SUBJECT FIRST, id last. A note id is a database key: it tells the reader nothing, and leading
+        # with it makes them skip past the least useful token before they learn what this is about.
+        print("  \u2022 %s  (from %s)  [%s]" % (n.get("title", ""), n.get("from_app") or "?", n.get("id", "")))
+        body = (n.get("body") or "").strip()
+        if body: print("      " + body.replace("\n", "\n      "))
+elif blocked:
+    print("\U0001F4CB Brain notes — nothing NEW for %s (%d blocked, below)." % (app, len(blocked)))
+elif bugs:
+    print("\U0001F4CB Brain notes — nothing new for %s; open bugs below." % app)
+else:
+    print("\U0001F4CB Brain notes — nothing needs you for %s." % app)
+if blocked:
+    # Subject + the reason, no body. The reason is the only new information: the note itself was read
+    # when it was parked, and what a reader needs now is WHO is holding it and for WHAT.
+    print("  \u23F8 %d BLOCKED on a human — parked, not forgotten:" % len(blocked))
+    for n in blocked:
+        print("      %s  (from %s)  [%s]" % (n.get("title", ""), n.get("from_app") or "?", n.get("id", "")))
+        why = (n.get("blocked_on") or "").strip()
+        if why: print("          waiting on: " + why)
+    print("      \u2192 unblock_note when the answer lands; resolve_note when it is actually done.")
+if fyis:
+    # Subjects only. These are marked done by the sender; read one if it looks relevant, otherwise they
+    # close themselves after 7 days. No body — that is the whole point.
+    print("  %d marked done (\u2705) — skim or ignore; they auto-close after 7 days:" % len(fyis))
+    for n in fyis:
+        print("      %s  (from %s)  [%s]" % (n.get("title", "").lstrip("\u2705 ").strip(), n.get("from_app") or "?", n.get("id", "")))
+if bugs:
+    # SEVERITY AND SUBJECT, id last — same rule as the notes above. The bug board is the record, so
+    # this is a pointer to it, not a copy of it: no body, because the full report is one call away and
+    # a banner that reprints it every session is how people learn to scroll past the banner.
+    print("  \U0001F41E %d OPEN BUG%s for %s \u2014 from the bug board, not the notes rail:" % (
+        len(bugs), "" if len(bugs) == 1 else "S", app))
+    for b in bugs:
+        print("      sev %s \u00b7 %s  (%s)  [%s]" % (
+            b.get("severity") or "normal", b.get("title", ""), b.get("status") or "new", b.get("id", "")))
+    print("      \u2192 bug_update id=\u2026 status=resolved when it is actually fixed.")
+if asks or bugs: print("  \u2192 run /gxbrain to act on these; resolve_note / bug_update when done.")
+' 2>/dev/null
+exit 0
