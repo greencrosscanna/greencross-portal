@@ -31,9 +31,11 @@
 
   <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-client.js"></script>
   <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-topnav.js"></script>
+  <script src="https://greencrosscanna.github.io/greencross-gx-theme/gx-bugreport.js"></script>
 
   <script>
-    // Dev guard reads. The portal writes nothing to GX Core except signing in.
+    // Dev guard reads. The portal writes nothing to GX Core except signing in and filing a bug
+    // (file_bug is deliberately NOT listed: locally it stays blocked until writes are armed).
     window.GX_DEV_READS = ['login', 'my_apps', 'portal_status'];
   </script>
 
@@ -95,6 +97,6 @@
   </script>
 
   <!-- ?v=N is the single source of truth deploy.sh reads for the version. Bump on each ship. -->
-  <script src="portal.js?v=1.101"></script>
+  <script src="portal.js?v=1.102"></script>
 </body>
 </html>
