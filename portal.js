@@ -9,7 +9,7 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.101';
+  var VERSION = 'v1.102';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;
@@ -19,6 +19,29 @@
   var GX = GXClient(GXCORE_URL, { retries: 3 });
   var root = document.getElementById('app');
   var timer = null;
+  var navHooked = false;
+
+  /* Bug reporter (shared gx-bugreport.js). The portal has no backend, so it files straight to GX Core's
+     token-gated file_bug route. The server forces app=portal and takes the reporter from the token —
+     what is sent here for those is ignored on purpose. The shared form's field names (desc, priority,
+     appVer) are mapped to the route's (detail, severity, app_version). No screenshot upload: the route
+     takes none. fab:false — the trigger is the user-menu item, which only exists once signed in. */
+  if (window.GXBugReport) {
+    GXBugReport.init({
+      app: 'portal',
+      fab: false,
+      version: function () { return VERSION; },
+      context: function () { return { tab: 'portal' }; },
+      submit: function (payload) {
+        var s = getSession();
+        if (!s) return Promise.resolve({ ok: false, error: 'Your session expired — sign in again, then report it.' });
+        return GX.jsonp('file_bug', {
+          token: s.token, title: payload.title, detail: payload.desc, severity: payload.priority,
+          app_version: payload.appVer, context: payload.context,
+        }, { retries: 1, timeoutMs: 20000 });
+      },
+    });
+  }
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -103,12 +126,17 @@
       GXTopNav.renderUser(document.getElementById('userSlot'), {
         name: sess.name, role: sess.role,
         items: [{ action: 'version', label: 'Version', value: VERSION },
+                { action: 'bug', label: 'Report a bug' },
                 { action: 'logout', label: 'Sign out', danger: true }],
       });
-      document.addEventListener('gx-topnav:action', function (ev) {
-        var a = ev && ev.detail && ev.detail.action;
-        if (a === 'logout') signOut();
-      });
+      if (!navHooked) {
+        navHooked = true;
+        document.addEventListener('gx-topnav:action', function (ev) {
+          var a = ev && ev.detail && ev.detail.action;
+          if (a === 'logout') signOut();
+          if (a === 'bug' && window.GXBugReport) GXBugReport.open();
+        });
+      }
     }
     root.innerHTML =
       '<div class="pt-wrap">' +
