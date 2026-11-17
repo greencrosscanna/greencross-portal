@@ -9,7 +9,7 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.100';
+  var VERSION = 'v1.101';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;
@@ -26,10 +26,18 @@
   }
 
   // sessionStorage, like the other credentialed apps: closing the tab ends the session.
+  // GX Core's login returns expiresAt as an ISO string (a number elsewhere in the suite), so accept
+  // both. An expiry that parses to neither is treated as expired — fail closed.
+  function expiryMs(v) {
+    var n = Number(v);
+    if (isFinite(n) && n > 0) return n;
+    var t = Date.parse(v);
+    return isNaN(t) ? 0 : t;
+  }
   function getSession() {
     try {
       var s = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
-      if (s && s.token && (!s.expiresAt || Number(s.expiresAt) > Date.now())) return s;
+      if (s && s.token && (!s.expiresAt || expiryMs(s.expiresAt) > Date.now())) return s;
     } catch (e) {}
     return null;
   }
