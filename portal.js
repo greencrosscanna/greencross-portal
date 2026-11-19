@@ -9,7 +9,7 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.108';
+  var VERSION = 'v1.109';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;
@@ -72,7 +72,21 @@
   function setSession(s) { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (e) {} }
   function clearSession() { try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {} }
 
+  /* The burning-joint cover (joint-loader.js). Up from the moment someone signs in (or reopens the
+     page signed in) until their app tiles are drawn. One at a time; hideLoader(true) finishes the
+     burn, hideLoader(false) drops it at once for a failure the page is about to explain. */
+  var loader = null;
+  function showLoader() {
+    if (!loader && window.GXJointLoader) loader = GXJointLoader.screen({ appName: 'Apps' });
+    return loader;
+  }
+  function hideLoader(finish) {
+    var l = loader; loader = null;
+    if (l) { if (finish) l.done(); else l.cancel(); }
+  }
+
   function signOut() {
+    hideLoader(false);
     clearSession();
     // Stop Google from silently picking the same account on the next visit to this sign-in screen.
     try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
@@ -132,6 +146,7 @@
   function onGoogleCredential(resp) {
     var errEl = document.getElementById('gErr');
     if (errEl) errEl.textContent = 'Signing in…';
+    showLoader();
     // retries:1 is replay-safe: a second attempt with the same credential only mints another session
     // for the same person (Core writes nothing else), and a refusal is JSON so it never retries.
     GX.postJSON('google_login', { credential: resp && resp.credential, app: 'portal' }, { retries: 1, timeoutMs: 30000 })
@@ -142,6 +157,7 @@
         start();
       })
       .catch(function (e) {
+        hideLoader(false);
         var el = document.getElementById('gErr');
         if (el) el.textContent = (e && e.message) || 'Google sign-in failed. Please try again.';
       });
@@ -250,9 +266,17 @@
     try { w = window.open('', '_blank'); } catch (e) { w = null; }
     if (w) {
       try {
-        w.document.title = 'Opening ' + name + '…';
-        w.document.body.style.cssText = 'font:16px system-ui,sans-serif;background:#0b1410;color:#e6f2ea;display:flex;align-items:center;justify-content:center;height:100vh;margin:0';
-        w.document.body.textContent = 'Opening ' + name + '…';
+        // The joint burns in the new tab while the code is fetched (CSS only: the tab runs none of our
+        // scripts). Plain text if the loader file did not load.
+        if (window.GXJointLoader) {
+          w.document.open();
+          w.document.write(GXJointLoader.tabHtml('Opening ' + name + '…'));
+          w.document.close();
+        } else {
+          w.document.title = 'Opening ' + name + '…';
+          w.document.body.style.cssText = 'font:16px system-ui,sans-serif;background:#0b1410;color:#e6f2ea;display:flex;align-items:center;justify-content:center;height:100vh;margin:0';
+          w.document.body.textContent = 'Opening ' + name + '…';
+        }
       } catch (e) {}
     }
     handoffUrl(slug, url).then(function (u) {
@@ -299,15 +323,18 @@
 
   function start() {
     var sess = getSession();
-    if (!sess) { renderGate(''); return; }
+    if (!sess) { hideLoader(false); renderGate(''); return; }
+    showLoader();
     renderShell(sess);
     GX.jsonp('my_apps', { token: sess.token }).then(function (r) {
       if (refused(r)) { signOut(); return; }
-      if (goToCommandCenter(r)) return;
+      if (goToCommandCenter(r)) return;   // leaving for Command Center: keep the joint lit until the page goes
       renderApps(r);
+      hideLoader(true);
     }).catch(function () {
       var host = document.getElementById('ptApps');
       if (host) host.innerHTML = '<div class="pt-note">Could not load your apps. Pull down to retry.</div>';
+      hideLoader(true);
     });
     loadStatus(sess);
     if (timer) clearInterval(timer);
