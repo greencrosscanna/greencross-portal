@@ -9,7 +9,7 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.109';
+  var VERSION = 'v1.110';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;

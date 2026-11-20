@@ -62,8 +62,6 @@
        below the maintenance gate (10000), which must always win. */
     '.gxj-screen{position:fixed;inset:0;z-index:9999;overflow:auto;color-scheme:dark;background:#0a0e0d radial-gradient(1100px 620px at 50% -10%,rgba(74,222,128,.09),transparent 62%);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#e6ece9;transition:opacity .35s linear}' +
     '.gxj-screen.is-out{opacity:0}' +
-    '.gxj-top{position:relative;height:7px;background:#0f1412;border-bottom:1px solid #161c1a;overflow:hidden}' +
-    '.gxj-top .gxj-bar{height:7px}' +
     '.gxj-body{display:flex;flex-direction:column;align-items:center;text-align:center;gap:26px;max-width:620px;margin:0 auto;padding:88px 16px 64px}' +
     '.gxj-brand{display:flex;flex-direction:column;align-items:center;gap:10px}' +
     '.gxj-logo{display:block;width:212px;max-width:70vw;height:auto}' +
@@ -150,7 +148,6 @@
     root.setAttribute('role', 'status');
     root.setAttribute('aria-live', 'polite');
     root.innerHTML =
-      '<div class="gxj-top"></div>' +
       '<div class="gxj-body">' +
         '<div class="gxj-brand">' +
           '<img class="gxj-logo" src="' + esc(opts.logo || DEFAULT_LOGO) + '" alt="Green Cross">' +
@@ -163,8 +160,7 @@
           '<div class="gxj-line"></div>' +
         '</div>' +
       '</div>';
-    var top = bar({ smoke: false }), main = bar();
-    root.querySelector('.gxj-top').appendChild(top.el);
+    var main = bar();
     root.querySelector('.gxj-main').appendChild(main.el);
     main.el.classList.add('is-waiting');
     document.body.appendChild(root);
@@ -174,7 +170,7 @@
     var pct = 0, li = 0, ivBurn, ivLine, finishing = null, gone = false;
 
     function paint() {
-      top.set(pct); main.set(pct);
+      main.set(pct);
       pctEl.textContent = Math.round(pct) + '%';
     }
     lineEl.textContent = lines[0];
@@ -243,7 +239,7 @@
         '.gxj-char{width:calc(var(--gxj-p) * .91%)}' +
         '.gxj-ember{left:calc(var(--gxj-p) * .91%);height:calc((100 - var(--gxj-p) * .34) * 1% + 2px)}' +
       '</style></head><body>' +
-      '<div class="gxj-screen" role="status"><div class="gxj-top"><div class="gxj-bar no-smoke">' + BAR_HTML + '</div></div>' +
+      '<div class="gxj-screen" role="status">' +
         '<div class="gxj-body"><div class="gxj-brand"><img class="gxj-logo" src="' + esc(logo || DEFAULT_LOGO) + '" alt="Green Cross">' +
           '<div class="gxj-tags"><span class="gxj-state">' + t + '</span></div></div>' +
           '<div class="gxj-meter"><div class="gxj-bar">' + BAR_HTML + '</div>' +
