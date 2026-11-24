@@ -9,7 +9,7 @@
    Nothing here decides who sees what: the server filters, this file only draws. */
 (function () {
   var GXCORE_URL = 'https://script.google.com/macros/s/AKfycbx9mjeCBbDpxNYaqBv2hyZaO1hpbGG6PZM9AebFdwl0UwkdtRCGSWrH-8ohEtdF1K_6/exec';
-  var VERSION = 'v1.111';
+  var VERSION = 'v1.112';
   window.PORTAL_VERSION = VERSION;
   var SESSION_KEY = 'portal_session';
   var STATUS_EVERY_MS = 60000;
@@ -53,24 +53,39 @@
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  // sessionStorage, like the other credentialed apps: closing the tab ends the session.
-  // GX Core's login returns expiresAt as an ISO string (a number elsewhere in the suite), so accept
-  // both. An expiry that parses to neither is treated as expired — fail closed.
+  /* localStorage (Sky, 2026-11-23): a sign-in lasts until GX Core's expiry (30 days) and survives
+     closing the tab. Sessions saved by the older sessionStorage build are moved over once, on read,
+     then removed from sessionStorage; sign-out clears both.
+     GX Core's login returns expiresAt as an ISO string (a number elsewhere in the suite), so accept
+     both. An expiry that parses to neither is treated as expired — fail closed. */
   function expiryMs(v) {
     var n = Number(v);
     if (isFinite(n) && n > 0) return n;
     var t = Date.parse(v);
     return isNaN(t) ? 0 : t;
   }
-  function getSession() {
+  function migrateSession() {
     try {
-      var s = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
+      if (localStorage.getItem(SESSION_KEY)) return;
+      var old = sessionStorage.getItem(SESSION_KEY);
+      if (!old) return;
+      localStorage.setItem(SESSION_KEY, old);
+      sessionStorage.removeItem(SESSION_KEY);   // only once the copy has landed
+    } catch (e) {}
+  }
+  function getSession() {
+    migrateSession();
+    try {
+      var s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
       if (s && s.token && (!s.expiresAt || expiryMs(s.expiresAt) > Date.now())) return s;
     } catch (e) {}
     return null;
   }
-  function setSession(s) { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (e) {} }
-  function clearSession() { try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {} }
+  function setSession(s) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (e) {} }
+  function clearSession() {
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+  }
 
   /* The burning-joint cover (joint-loader.js). Up from the moment someone signs in (or reopens the
      page signed in) until their app tiles are drawn. One at a time; hideLoader(true) finishes the
@@ -252,6 +267,47 @@
       .catch(function () { return url; });
   }
 
+  /* ?open=<app key> — THE WAY BACK FROM AN APP. Every app's sign-in screen has a "Sign in with Google"
+     button (gx-theme) that sends the person here with ?open=<its key>. Once they are signed in here
+     (already, or by signing in now) and hold that app, they are handed straight back to it signed in.
+     - The key is checked against OPEN_KEYS, this file's own list. Anything else is ignored — never
+       echoed, never used to build a URL.
+     - The URL opened is the one GX Core's my_apps lists for that app (the same URL its tile uses),
+       never anything from the address bar. Not in my_apps = no access: the portal shows as normal.
+     - open= is wiped from the address bar the moment the page loads, and the request is a one-shot
+       held in memory: it fires on the first app list that comes back, then is gone. A reload, a
+       sign-out and sign-in, or a later visit cannot fire it again. */
+  var OPEN_KEYS = ['inventory', 'sales', 'performance', 'pricecards', 'spiff', 'crew', 'displayshop', 'core-admin'];
+  function validOpenKey(k) {
+    return (typeof k === 'string' && OPEN_KEYS.indexOf(k) >= 0) ? k : null;
+  }
+  function readOpenParam() {
+    var key = null;
+    try {
+      var params = new URLSearchParams(location.search);
+      if (!params.has('open')) return null;
+      key = validOpenKey(params.get('open'));
+      params.delete('open');
+      var q = params.toString();
+      history.replaceState(history.state, '', location.pathname + (q ? '?' + q : '') + location.hash);
+    } catch (e) {}
+    return key;
+  }
+  var pendingOpen = readOpenParam();
+
+  // Returns true when it is leaving for the requested app.
+  function openRequestedApp(r) {
+    var key = pendingOpen;
+    pendingOpen = null;   // one shot, whatever happens next
+    if (!key) return false;
+    var app = ((r && r.apps) || []).filter(function (a) { return a && a.slug === key; })[0];
+    if (!app) return false;   // they do not hold it: show the portal
+    var url = app.url || (key === 'core-admin' ? CC_FALLBACK_URL : '');
+    if (!/^https:\/\//.test(String(url))) return false;
+    handoffUrl(key, url).then(function (u) { location.replace(u); });
+    return true;
+  }
+
   /* A tile click. The new tab is opened INSIDE the click (a tab opened after an await is a popup, and
      browsers block those), shows a holding line while the code is fetched, then is sent on. Modified
      clicks (new window, background tab, middle button) keep the plain link: no code is minted for a tab
@@ -328,6 +384,7 @@
     renderShell(sess);
     GX.jsonp('my_apps', { token: sess.token }).then(function (r) {
       if (refused(r)) { signOut(); return; }
+      if (openRequestedApp(r)) return;    // back to the app that sent them here (?open=): keep the joint lit
       if (goToCommandCenter(r)) return;   // leaving for Command Center: keep the joint lit until the page goes
       renderApps(r);
       hideLoader(true);

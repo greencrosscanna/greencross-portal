@@ -17,6 +17,12 @@ hidden**: Command Center holds admin controls.
 - **Status:** `?action=portal_status` — Dutchie, Sales data, Inventory sync, plus QuickBooks for Shawn and
   admins. A word and a plain label only; `api_health` itself stays secret-gated. A light that cannot be
   read shows yellow, never green.
+- **Sign-in lasts 30 days** (GX Core's expiry) and survives closing the tab: `localStorage`, not
+  `sessionStorage` (Sky, 2026-11-23). Old tab-scoped sessions are moved over on first read.
+- **`?open=<app key>`** is how an app's "Sign in with Google" button (gx-theme) comes back: once signed
+  in here, a person who holds that app is handed straight to it signed in. The key must be in
+  `OPEN_KEYS`; the URL always comes from `my_apps`, never the address bar; it is wiped on load and fires
+  once. No access or unknown key = the portal as normal. Tests: `tests/open_return_test.js`.
 - Ops-board to-dos on the portal are v2 — not built.
 
 ## Layout
